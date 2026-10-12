@@ -1,0 +1,31 @@
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: cruddb
+      MYSQL_USER: ${DB_USERNAME:?Set DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  app:
+    image: ${APP_IMAGE:-crud-app:local}
+    build: .
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://db:3306/cruddb
+      DB_USERNAME: ${DB_USERNAME:?Set DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  mysql_data:
