@@ -1,6 +1,10 @@
 pipeline {
   agent any
-  options { timestamps(); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: '20')); timeout(time: 7, unit: 'DAYS') }
+  options {
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 7, unit: 'DAYS')
+	}
   parameters {
     choice(name: 'ACTION', choices: ['deploy', 'test-only', 'rollback'], description: 'Pipeline action')
     choice(name: 'CHECKS', choices: ['all', 'tests-only', 'fast'], description: 'Select check set')
