@@ -48,7 +48,7 @@ pipeline {
     }
     stage('Build Docker image') {
       when { expression { params.ACTION == 'deploy' } }
-      steps {
+      steps {   
         unstash 'application-jar'
         sh 'docker build --pull -t ${IMAGE_NAME}:${IMAGE_TAG} -t ${IMAGE_NAME}:${DEPLOY_ENV}-latest .'
       }
@@ -77,15 +77,18 @@ pipeline {
     stage('Health and smoke test') {
       when { expression { params.ACTION == 'deploy' } }
       steps {
-        sh """set -eu
-          URL="http://host.docker.internal:${APP_PORT}/actuator/health"
-          for i in $(seq 1 30); do
-            if curl --fail --silent "$URL" | grep -q '"status":"UP"'; then echo "Health check passed"; exit 0; fi
-            sleep 5
-          done
-          docker compose -p "$COMPOSE_PROJECT_NAME" logs --tail=150
-          exit 1
-        """
+			sh '''set -eu
+					  URL="http://host.docker.internal:$APP_PORT/actuator/health"
+					  for i in $(seq 1 30); do
+						if curl --fail --silent "$URL" | grep -q '"status":"UP"'; then
+						  echo "Health check passed"
+						  exit 0
+						fi
+						sleep 5
+					  done
+					  docker compose -p "$COMPOSE_PROJECT_NAME" logs --tail=150
+					  exit 1
+					'''
       }
     }
     stage('Rollback') {
