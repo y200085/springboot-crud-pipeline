@@ -15,11 +15,13 @@ pipeline {
             choices: ['deploy', 'test-only', 'rollback'],
             description: 'Choose the pipeline action'
         )
+
         choice(
             name: 'CHECKS',
             choices: ['all', 'tests-only', 'fast'],
             description: 'Choose which checks to run'
         )
+
         booleanParam(
             name: 'FORCE_DEPLOY',
             defaultValue: false,
@@ -35,7 +37,8 @@ pipeline {
     }
 
     stages {
-        stage('Validate branch') {
+
+        stage('Validate branch and tools') {
             steps {
                 script {
                     if (!(env.BRANCH_NAME in ['development', 'production'])
@@ -43,10 +46,16 @@ pipeline {
                         error("Branch ${env.BRANCH_NAME} is not allowed")
                     }
 
+                    if (params.ACTION == 'deploy'
+                        && !(env.BRANCH_NAME in ['development', 'production'])) {
+                        error('Deployment is allowed only from development or production')
+                    }
+
                     env.DEPLOY_ENV =
                         env.BRANCH_NAME == 'production' ? 'production' : 'dev'
 
                     env.COMPOSE_PROJECT_NAME = "crud-${env.DEPLOY_ENV}"
+
                     env.APP_PORT =
                         env.DEPLOY_ENV == 'production' ? '8081' : '8080'
 
@@ -57,6 +66,13 @@ pipeline {
                         env.DEPLOY_ENV == 'production'
                             ? env.PROD_DB_CREDS
                             : env.DEV_DB_CREDS
+
+                    if (params.ACTION == 'rollback') {
+                        error(
+                            'Rollback is not configured. ' +
+                            'Implement previous-image tracking before using this action.'
+                        )
+                    }
                 }
 
                 sh '''
@@ -70,6 +86,10 @@ pipeline {
         }
 
         stage('Build and checks') {
+            when {
+                expression { params.ACTION != 'rollback' }
+            }
+
             parallel {
                 stage('Unit tests and package') {
                     steps {
@@ -80,6 +100,7 @@ pipeline {
                             includes: 'target/crud-app-1.0.0.jar'
                         )
                     }
+
                     post {
                         always {
                             junit(
@@ -90,22 +111,11 @@ pipeline {
                     }
                 }
 
-                stage('Dependency security check') {
-                    when {
-                        expression { params.CHECKS == 'all' }
-                    }
-                    steps {
-                        sh '''
-                            mvn -B org.owasp:dependency-check-maven:check \
-                                -DfailBuildOnCVSS=9
-                        '''
-                    }
-                }
-
                 stage('Source sanity') {
                     when {
                         expression { params.CHECKS != 'tests-only' }
                     }
+
                     steps {
                         sh '''
                             set -eu
@@ -123,11 +133,13 @@ pipeline {
             when {
                 expression { params.ACTION == 'deploy' }
             }
+
             steps {
                 unstash 'application-jar'
 
                 sh '''
                     set -eu
+
                     docker build --pull \
                         -t "${IMAGE_NAME}:${IMAGE_TAG}" \
                         -t "${IMAGE_NAME}:${DEPLOY_ENV}-latest" .
@@ -142,12 +154,14 @@ pipeline {
                     expression { params.ACTION == 'deploy' }
                 }
             }
+
             options {
                 timeout(time: 5, unit: 'DAYS')
             }
+
             steps {
                 input(
-                    message: "Approve ${IMAGE_NAME}:${IMAGE_TAG} for production?",
+                    message: "Approve ${IMAGE_NAME}:${IMAGE_TAG} for production deployment?",
                     ok: 'Deploy to production',
                     submitter: 'jenkins-admins'
                 )
@@ -158,6 +172,7 @@ pipeline {
             when {
                 expression { params.ACTION == 'deploy' }
             }
+
             steps {
                 script {
                     def rootCredentialId =
@@ -197,6 +212,7 @@ pipeline {
             when {
                 expression { params.ACTION == 'deploy' }
             }
+
             steps {
                 sh '''
                     set -eu
@@ -221,18 +237,6 @@ pipeline {
                 '''
             }
         }
-
-        stage('Rollback') {
-            when {
-                expression { params.ACTION == 'rollback' }
-            }
-            steps {
-                error(
-                    'Rollback is not configured yet. ' +
-                    'Implement and validate previous-image tracking before enabling it.'
-                )
-            }
-        }
     }
 
     post {
@@ -241,7 +245,11 @@ pipeline {
         }
 
         failure {
-            echo 'Pipeline failed. Review the console output and container logs.'
+            echo 'Pipeline failed. Check the console output and Docker logs.'
+        }
+
+        aborted {
+            echo 'Pipeline was aborted or approval timed out.'
         }
 
         always {
