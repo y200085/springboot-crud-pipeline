@@ -57,7 +57,7 @@ pipeline {
                     env.COMPOSE_PROJECT_NAME = "crud-${env.DEPLOY_ENV}"
 
                     env.APP_PORT =
-                        env.DEPLOY_ENV == 'production' ? '8081' : '8080'
+                        env.DEPLOY_ENV == 'production' ? '8083' : '8082'
 
                     env.IMAGE_TAG =
                         "${env.DEPLOY_ENV}-${env.BUILD_NUMBER}"
